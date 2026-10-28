@@ -6,7 +6,7 @@ tags:
   - 类型/概念
   - 难度/入门
 created: 2026-10-28
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # Python 环境与依赖管理
@@ -269,6 +269,32 @@ pip install --no-index --find-links ./wheels -r requirements.txt
 - [ ] requirements.txt 和 lock 文件有什么区别？交付时该给哪个？
 - [ ] 内网离线安装 Python 包，需要保证哪些东西一致？
 - [ ] 怎么确认当前运行的 Python 就是你以为的那个环境里的？
+
+## 自检问题参考答案
+
+> [!success]- 1. 为什么不直接装到系统环境？
+> 系统解释器的 site-packages 是所有项目共享的，同一个包只能存在一个版本，两个项目需求不同就必然互相覆盖升级坏。更麻烦的是系统工具（包管理器、驱动安装脚本）也依赖系统 Python，`sudo pip install` 装乱了可能把系统工具搞坏，修复成本极高、甚至只能重装。所以每个项目一个独立环境，系统 Python 一律不动，这是最低成本的自保。
+
+> [!success]- 2. venv 和 conda 各隔离了什么？
+> venv 只隔离 Python 包，轻量、无额外依赖，但它只认一个 Python 版本、也隔离不了显卡驱动和系统库；系统库缺了照样报 `libxxx.so not found`。conda 隔离 Python 包 + 非 Python 依赖（能带 CUDA 库），还能换 Python 版本，代价是环境大、迁移慢，而且和 pip 混用会把环境搞乱。再往上是容器，隔离整个运行环境，最可复现，代价是多一层、调试要进容器。
+
+> [!success]- 3. wheel 与 sdist 差在哪、内网为什么容易失败？
+> wheel 是预编译好的安装包，下载即用；sdist 只有源码，安装时要现场编译，需要编译器和系统头文件。内网机器通常没外网、也往往没装编译器，拿到 sdist 直接报 `command 'gcc' failed`，这是内网装包最常见的死法。对策是在有网的同系统同架构机器上 `pip download` 把 wheel（含间接依赖）备齐，再离线安装。
+
+> [!success]- 4. 为什么验证 `is_available()` 而不是只看 `nvidia-smi`？
+> `nvidia-smi` 只能证明驱动和卡是正常的，看不到框架里装的是 CPU 版还是 GPU 版。如果装成了 CPU 版，模型能跑但特别慢、GPU 占用为 0，很容易误判成硬件不行。所以装完要跑 `torch.__version__` 和 `torch.cuda.is_available()`；为 False 时先怀疑装成 CPU 版，再看 `torch.version.cuda`，按官方索引重装，最后才按驱动→wheel 变体→算力架构的顺序排查。
+
+> [!success]- 5. 依赖冲突的本质与报错怎么看？
+> 本质是找交集：每个包都声明"我要某个范围的依赖版本"，安装器要找出所有包都能接受的版本组合，找不到就报冲突。报错里抓两个词最有用：`ResolutionImpossible` 说明求解失败，然后看点名的是哪两个包、各要什么版本区间。对策顺序：找兼容版本区间 → 拆成两个环境或容器 → 最后才考虑降级主框架。
+
+> [!success]- 6. requirements.txt 和 lock 交付给哪个？
+> `requirements.txt` 通常只写直接依赖，别人装出来的版本可能完全不同，重现性差；lock 文件把全部依赖（含间接依赖）的精确版本钉死。所以交付、生产、客户环境必须给锁定后的版本（lock，或用 `pip freeze` 导出全量），才能做到"我交付的和你装出来的一样"；一次性试验可以不锁，但最终版本要记下来。
+
+> [!success]- 7. 内网离线装包要保证哪四件事一致？
+> 操作系统版本、CPU 架构、Python 版本、显卡驱动版本，四件里有一件不一致就可能装不上或跑不起来。做法：先摸清目标机这四件事，在有网的机器上"还原"一个尽量一致的环境（同 Python 版本、同架构），执行 `pip download -r requirements.txt -d ./wheels` 把包和间接依赖全部下齐，搬过去用 `pip install --no-index --find-links ./wheels` 安装，最后 `pip check` 和 GPU 验证。
+
+> [!success]- 8. 怎么确认当前 Python 是哪个环境？
+> 三招组合：`which -a python` 看 PATH 里所有解释器、当前命中哪个；激活环境后命令行前面会出现 `(.venv)`；再用绝对路径跑 `环境/bin/python` 或打印 `sys.executable` 确认。如果服务是用 systemd/容器起的，要看它的启动命令和环境变量，别拿自己终端里的环境去猜。`pip list` 里有包但 import 报没有，多半就是"跑的 Python 不是你以为的那个"。
 
 ## 相关笔记
 
